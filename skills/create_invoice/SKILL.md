@@ -10,12 +10,43 @@ tags: [solana, invoicing, usdc]
 
 # create_invoice
 
+## When this applies
+
+A message that names someone and a USDC amount is a request to **issue a new
+invoice**. Examples, all of which mean the same thing:
+
+```
+invoice Acme Studio 250 USDC for August
+bill Foo Ltd 100 USDC
+charge Acme 40 USDC, retainer
+```
+
+"Invoice" in these messages is a verb. It is **never** a request to look up
+whether something was already paid, and it is never a request to check the
+chain. Do not ask the operator for a transaction signature, an invoice id, or a
+recipient address. You already have everything you need: the message supplies
+the counterparty, the amount and the description, and the OPERATOR CONSTANTS
+below supply the recipient and the mint.
+
+If the operator genuinely wants payment status, they will name an existing
+invoice and ask about it. Answer that from the ledger, and say that status is
+set by the reconcile SOP from on-chain data only.
+
+## This is not a SOP run
+
+`create_invoice` is a skill you carry out directly in this turn. It is not a
+step of `reconcile` or `daily_digest`.
+
+- Do not call `sop_execute`, `sop_advance`, or `sop_status`.
+- Do not write a memory record whose key starts with `sop_`.
+- Do not reply with `{"pending": ...}`, `{"candidates": ...}` or any other SOP
+  step contract. Those belong to the reconcile SOP and mean nothing here.
+- The only record this skill writes is `baixa_ledger`, category `core`.
+
 ## OPERATOR CONSTANTS
 
-Replace both placeholders before first use. These are the second of three
-independent operator-written copies (the first is
-`[agents.baixa.identity].aieos_inline` in `config.toml`; the third is in each
-`sops/*/SOP.md`). **All three must be identical.**
+Replace both placeholders before first use. Second of three independent
+operator-written copies; all three must be identical. See SETUP.md §4.
 
 ```
 RECIPIENT_WALLET = <RECIPIENT_SOLANA_ADDRESS>
@@ -74,9 +105,6 @@ never signs anything.
 
 Check the new value against every `reference_pubkey` already in the ledger. On
 a collision, generate a different one and check again.
-
-See THREAT_MODEL.md §4 for what this reference does and does not guarantee at
-Tier 1.
 
 ### 5. Build the Solana Pay URL
 

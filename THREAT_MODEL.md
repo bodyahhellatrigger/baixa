@@ -13,12 +13,31 @@ submits the transaction. Baixa then reads the chain. There is no signing path in
 the codebase, no key material in config, no key material in memory, and no tool
 on the agent's risk profile that could produce a signature.
 
-The risk profile excludes `shell`, `file_write`, and `file_edit`
-(`config.example.toml`, `[risk_profiles.baixa].excluded_tools`), so there is no
+The risk profile names a strict **allowlist** of seven tools
+(`config.example.toml`, `[risk_profiles.baixa].allowed_tools`): `http_request`,
+`memory_recall`, `memory_store`, `send_message_to_peer`, and the three `sop_*`
+lifecycle tools. A non-empty list is an authorization constraint — anything not
+named is unreachable (`schema.rs:11812-11840`). So there is no
 route to a local key file or an external signer either.
 
 This is the one guarantee that holds regardless of how badly a prompt injection
 goes. **Nobody can make Baixa move funds, because Baixa cannot move funds.**
+
+
+**Why an allowlist and not a denylist.** An earlier version of this file claimed
+`excluded_tools = [shell, file_write, file_edit]` was the control. That claim was
+wrong twice over. A three-name denylist admits every tool nobody thought to
+name, and a live run showed the agent reaching for `file_read` and
+`glob_search`. And `excluded_tools` is scoped: the schema documents it as
+"Tools excluded from **non-CLI channels** under this profile"
+(`schema.rs:11841-11847`), so it never applied to `zeroclaw agent` at all. It is
+kept in the config as a redundant second statement about the three worst tools,
+not as the mechanism.
+
+That scoping still leaves one honest gap: anyone who can run `zeroclaw agent` on
+the host is already the operator, and the allowlist is the only thing narrowing
+them. Host access is outside this threat model, and this document does not claim
+otherwise.
 
 ## 2. Status: the other structural control
 

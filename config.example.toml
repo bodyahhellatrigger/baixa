@@ -21,7 +21,7 @@ schema_version = 3                       # migration.rs:9 — CURRENT_SCHEMA_VER
 #   claude-opus-5    $5 / $25 per 1M tokens (in / out)
 #   claude-sonnet-5  $3 / $15  ($2 / $10 introductory through 2026-08-31)
 #   claude-haiku-4-5 $1 / $5   (200K context, weaker at multi-step verification)
-model = "claude-haiku-4-5"
+model = "claude-sonnet-4-5"
 api_key = "<ANTHROPIC_API_KEY>"
 
 # ─────────────────────────────────────────────────────────────────
@@ -91,6 +91,34 @@ aieos_inline = '''
 
 [risk_profiles.baixa]
 level = "supervised"                    # schema.rs:11773-11774
+
+# ALLOWLIST, not a denylist. This is the authorization decision: which tools
+# may this agent invoke at all (schema.rs:11812-11840). A non-empty list is a
+# strict allow-list; everything unnamed is unreachable.
+#
+# The previous configuration relied only on `excluded_tools = [shell,
+# file_write, file_edit]`. Two problems, both found by watching the agent run
+# rather than by reading the config:
+#
+#   1. A three-name denylist admits everything else. A live run showed the
+#      agent reaching for `file_read` and `glob_search` — a payments agent
+#      browsing the filesystem, which THREAT_MODEL.md says it cannot do.
+#   2. excluded_tools is documented as "Tools excluded from NON-CLI channels
+#      under this profile" (schema.rs:11841-11847). It never applied on the
+#      CLI path at all.
+#
+# This list is everything Baixa needs and nothing else. Adding a capability
+# means adding a line here, which is the point. excluded_tools stays below as
+# a second, redundant statement of intent for the three worst offenders.
+allowed_tools = [                       # schema.rs:11812-11840
+  "http_request",
+  "memory_recall",
+  "memory_store",
+  "send_message_to_peer",
+  "sop_execute",
+  "sop_advance",
+  "sop_status",
+]
 auto_approve = [                        # schema.rs:11788-11789
   "http_request",
   "memory_store",
