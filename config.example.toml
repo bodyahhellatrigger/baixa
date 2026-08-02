@@ -89,6 +89,26 @@ aieos_inline = '''
 # so every tool the unattended SOPs call must be listed here.
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+# Reply-intent precheck  (schema.rs:3650-3656, ChannelPrecheckConfig at
+# scattered_types.rs:341-354)
+#
+# MUST be off. Default is ON: before the agent loop runs, a separate
+# classifier LLM call decides whether the message deserves a reply at all.
+# Observed live — `invoice Acme Studio 250 USDC for August` was classified as
+# not needing a reply, the agent loop never ran, and the operator got silence
+# with no error anywhere. The only trace of it is one line:
+# `channel_message_no_reply` (channels/orchestrator/mod.rs:4994).
+#
+# Baixa has exactly one authorized sender, pre-authorized by numeric ID in
+# [peer_groups.baixa_operator]. Every message that reaches it is by definition
+# for it. A classifier deciding otherwise is a silent failure mode on the
+# issuing path, plus an extra model call per message.
+# ─────────────────────────────────────────────────────────────────
+
+[agents.baixa.precheck]
+enabled = false                         # scattered_types.rs:346-348
+
 [risk_profiles.baixa]
 level = "supervised"                    # schema.rs:11773-11774
 
