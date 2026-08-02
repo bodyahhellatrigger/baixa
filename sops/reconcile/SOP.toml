@@ -1,0 +1,29 @@
+# ZeroClaw has no YAML SOP format. A SOP is a directory holding SOP.toml plus
+# an optional SOP.md (docs sop/syntax.md:5-14, sop/how-it-works.md:5). This
+# file is that manifest; the steps live in SOP.md next to it.
+#
+# Fields below come from SopMeta (crates/zeroclaw-runtime/src/sop/types.rs:607-633)
+# and SopTrigger (types.rs:142-218), because the docs deliberately do not
+# enumerate manifest fields (sop/syntax.md:16-25).
+#
+# admission_policy = "hold" serializes runs: a tick that arrives while the
+# previous reconcile is still working is deferred, never overlapped
+# (sop/syntax.md:43-45). Two concurrent passes over one ledger record would
+# race on the write-back.
+
+[sop]
+name = "reconcile"
+description = "Polls Solana RPC every two minutes for payments against open Baixa invoices and closes the ones that verify."
+version = "0.1.0"
+agent = "baixa"
+max_concurrent = 1
+admission_policy = "hold"
+
+# Cron granularity: 5-field crontab is normalized to 6-field by prepending a
+# seconds field (crates/zeroclaw-runtime/src/sop/dispatch.rs:1252-1253).
+# Firing is driven by the SOP maintenance tick, whose period is
+# [sop] maintenance_interval_secs (default 60, schema.rs:22586-22593), so this
+# 2-minute schedule sits safely above the poll rate.
+[[triggers]]
+type = "cron"
+expression = "*/2 * * * *"
