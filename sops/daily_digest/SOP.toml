@@ -20,6 +20,29 @@
 name = "daily_digest"
 description = "Sends the operator one daily summary of the Baixa ledger: paid today, still open with age, flagged items with reasons, and the running total received."
 version = "0.1.0"
+
+# execution_mode is REQUIRED here and must be "auto". The global
+# [sop] default_execution_mode is "supervised", and supervised means
+# "request approval before step 1 of every run"
+# (sop/engine.rs:5456-5459), not "run, but carefully". A cron SOP has
+# nobody to answer that prompt, so under the default every one of the
+# 720 daily runs would park at step 1 and never reach the chain.
+# [sop] approval_mode = "out_of_band_required" makes it worse by design:
+# the agent cannot clear its own gate, so the runs would pile up until a
+# human cleared each from the CLI.
+#
+# "auto" does not remove the human gate this SOP actually needs.
+# step_requires_approval_gate (sop/engine.rs:5473-5476) returns true for
+# any step carrying requires_confirmation regardless of mode, and
+# pending_step_blocks_direct_advance (:5483-5485) does the same for
+# kind = checkpoint. Step 7 carries both, so the destination-mismatch
+# gate still stops the run under "auto" while steps 1 to 6 proceed
+# unattended. That is the intended shape: autonomous by default, one
+# explicit gate where money is implicated.
+#
+# The global default stays "supervised" on purpose, so any future SOP
+# dropped into this directory is gated until someone opts it out here.
+execution_mode = "auto"
 agent = "baixa"
 max_concurrent = 1
 admission_policy = "hold"

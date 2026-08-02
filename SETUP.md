@@ -129,6 +129,39 @@ only signal is one word in the daemon banner:
 
 Read that line every time you start the daemon.
 
+### Why both SOPs set `execution_mode = "auto"`
+
+`[sop] default_execution_mode` is left at `supervised`, and each SOP overrides
+it in its own `SOP.toml`. That looks backwards until you read what supervised
+does: `execution_mode_needs_approval` (`sop/engine.rs:5456-5459`) returns true
+for `step.number == 1`, so supervised means **an approval prompt before step 1
+of every single run**, not "run, but carefully".
+
+A cron SOP has nobody to answer that prompt. On the first live start every
+reconcile tick parked at step 1 and the next tick was refused with
+`cooldown or concurrency limit reached`, because `max_concurrent = 1` counted
+the parked run. `approval_mode = "out_of_band_required"` compounds it: the
+agent cannot clear its own gate, so the runs accumulate until a human clears
+each one from the CLI.
+
+Switching to `auto` does not give up the gate this project actually needs.
+`step_requires_approval_gate` (`sop/engine.rs:5473-5476`) returns true for any
+step carrying `requires_confirmation` **before** it consults the mode, and
+`pending_step_blocks_direct_advance` (`:5483-5485`) does the same for
+`kind: checkpoint`. Step 7 of reconcile carries both, so the
+destination-mismatch checkpoint still stops the run under `auto` while steps 1
+to 6 run unattended.
+
+Leave the global default at `supervised` so any SOP later dropped into the
+directory is gated until someone opts it out deliberately.
+
+If a run is stuck holding the concurrency slot:
+
+```sh
+zeroclaw sop pending
+zeroclaw sop deny <run-id>
+```
+
 ## 5. Authorize yourself
 
 `[peer_groups.baixa_operator]` in the example config pre-authorizes you. Put
