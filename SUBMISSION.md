@@ -262,6 +262,21 @@ prompt an operator who is not there at 03:00. Baixa keeps
 `level = "supervised"` and names the tools explicitly in `auto_approve` rather
 than escalating to `full`, so anything unlisted still gates.
 
+### A peer group that authorizes inbound does not authorize outbound
+
+`reconcile` notifies the operator with `send_message_to_peer`, which resolves
+its `target` through `resolve_peer_set`. That function skips any peer group
+which does not list the calling agent
+(`crates/zeroclaw-runtime/src/peers.rs:62-69`).
+
+The group `zeroclaw channel bind-telegram` creates automatically has no `agents`
+field (`docs/book/src/channels/telegram.md:216`), so it authorizes inbound
+Telegram messages and silently provides no valid outbound target. The symptom is
+an agent that answers you fine and never sends an unprompted notification.
+
+Baixa configures one group carrying both `agents` and `external_peers`, which
+covers inbound authorization and outbound addressing at once.
+
 ### There is no supported home for a custom config section
 
 The recipient address had to come from config. The root `Config` struct
