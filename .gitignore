@@ -1,0 +1,38 @@
+# ── Real configuration — never commit ────────────────────────────
+# config.example.toml IS committed; the real file never is.
+config.toml
+*.config.toml
+!config.example.toml
+
+# ZeroClaw install directory, if anyone points one at the repo
+.zeroclaw/
+.secret_key
+
+# ── Logs and runtime state ───────────────────────────────────────
+*.log
+logs/
+runtime-trace.jsonl
+costs.jsonl
+*.db
+*.db-wal
+*.db-shm
+data/
+sessions/
+
+# ── Secrets ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ── Vendored upstream source (recon only, not part of the submission) ──
+zeroclaw/
+
+# ── OS / editor noise ────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
