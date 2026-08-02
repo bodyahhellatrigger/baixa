@@ -42,11 +42,27 @@ agent = "baixa"
 max_concurrent = 1
 admission_policy = "hold"
 
-# Cron granularity: 5-field crontab is normalized to 6-field by prepending a
-# seconds field (crates/zeroclaw-runtime/src/sop/dispatch.rs:1252-1253).
-# Firing is driven by the SOP maintenance tick, whose period is
-# [sop] maintenance_interval_secs (default 60, schema.rs:22586-22593), so this
-# 2-minute schedule sits safely above the poll rate.
-[[triggers]]
-type = "cron"
-expression = "*/2 * * * *"
+
+# NO CRON TRIGGER BLOCK HERE, AND THAT IS DELIBERATE.
+#
+# A cron trigger on a SOP does fire, but nothing executes the run. The daemon
+# maintenance tick calls process_headless_results (src/main.rs:7952), which is
+# a logger: every branch records a line and returns. For an LLM step it records
+# "ready for step 1 ... but no agent loop available to execute" and leaves the
+# run Running forever. record_started_run states it outright
+# (sop/dispatch.rs:283-289): only execution_mode = "deterministic" is driven to
+# a terminal state, because deterministic steps need no LLM. Anything else
+# holds its max_concurrent slot indefinitely, so the SOP fires exactly once and
+# every later tick is skipped with "cooldown or concurrency limit reached".
+#
+# Deterministic mode is not open to this SOP. The builtin capabilities are
+# approval.wait, json.validate, shell.exec, git.status, git.diff and
+# notify.channel (sop/capability/builtins.rs:102-244). None of them speak HTTP,
+# and reconcile exists to query Solana RPC.
+#
+# The run is therefore started by a declarative cron agent job
+# ([cron.reconcile] in config.toml, CronJobDecl at schema.rs:12687-12723),
+# which runs inside a real agent turn. That job calls sop_execute to open a run
+# and sop_advance to walk it, so this file keeps its steps, its output
+# contracts and its step 7 checkpoint. SPEC.md 3.8 named this path the fallback
+# if the SOP tick proved flaky. It did.

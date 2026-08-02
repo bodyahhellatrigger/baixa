@@ -33,7 +33,8 @@ enabled = true                          # schema.rs:3543-3544
 channels = ["telegram.home"]            # schema.rs:3545-3550
 model_provider = "anthropic.default"    # schema.rs:3551-3556
 risk_profile = "baixa"                  # schema.rs:3557-3560
-skill_bundles = ["baixa"]               # schema.rs:3565-3570
+skill_bundles = ["baixa"]
+cron_jobs = ["reconcile", "daily_digest"]   # schema.rs:3598-3603               # schema.rs:3565-3570
 
 # Per-agent memory. Backend locks at agent creation (schema.rs:3703-3710).
 [agents.baixa.memory]
@@ -99,6 +100,7 @@ auto_approve = [                        # schema.rs:11788-11789
   # lifecycle tools. Without these the SOPs stall at an approval prompt
   # that no human is present to clear.
   "send_message_to_peer",
+  "sop_execute",
   "sop_advance",
   "sop_status",
 ]
@@ -268,3 +270,89 @@ cached_input_per_mtok = 0.1
 [storage.sqlite.default]
 path = "<ABSOLUTE_PATH_TO_WORKSPACE>/brain.db"                # schema.rs:10404-10406
 open_timeout_secs = 30                   # schema.rs:10407-10409
+
+# ─────────────────────────────────────────────────────────────────
+# Scheduling  (schema.rs:269-276 — [cron.<alias>], CronJobDecl at :12687)
+#
+# The SOPs carry no cron trigger of their own. A SOP cron trigger fires but
+# nothing executes the resulting run: the daemon maintenance tick hands results
+# to process_headless_results (src/main.rs:7952), which only logs, and
+# record_started_run (sop/dispatch.rs:283-289) drives a run to completion only
+# when execution_mode is "deterministic". An LLM-step SOP started that way sits
+# Running forever and holds its max_concurrent slot, so it fires once and never
+# again. See sops/*/SOP.toml for the full note.
+#
+# A declarative cron agent job runs inside a real agent turn, so the SOP steps
+# actually execute. The job opens a run with sop_execute and walks it with
+# sop_advance, which keeps the step contracts and the step 7 checkpoint.
+#
+# The agent that owns these aliases is set by agents.baixa.cron_jobs
+# (schema.rs:3598-3603).
+#
+# allowed_tools is a hard allowlist passed straight into the agent run
+# (cron/scheduler.rs:822). Note the trade in cron_agent_run_security_policy
+# (cron/scheduler.rs:537-550): setting it explicitly SKIPS the default
+# scheduler-mutation exclusions, so the list below must be complete and must
+# not name a tool this job has no business calling.
+#
+# uses_memory = false because both SOPs recall the ledger themselves by key.
+# Automatic memory injection would prepend recalled text — including any
+# poisoned invoice description already in the ledger — to the job prompt for
+# no benefit. See INJECTION_TEST.md vector C.
+# ─────────────────────────────────────────────────────────────────
+
+[cron.reconcile]
+name = "Baixa reconcile"
+job_type = "agent"                      # schema.rs:12691-12693
+enabled = true
+uses_memory = false                     # schema.rs:12713-12716
+session_target = "isolated"             # schema.rs:12717-12719 — no cross-run bleed
+allowed_tools = [                       # schema.rs:12709-12712
+  "sop_execute", "sop_advance", "sop_status",
+  "memory_recall", "memory_store",
+  "http_request",
+  "send_message_to_peer",
+]
+prompt = """
+Run the reconcile SOP now.
+
+Call sop_execute with name "reconcile". It returns a run_id and the first step instruction. Carry out that step exactly as written, then call sop_advance with that run_id, a status of completed or failed, and a one-line summary. sop_advance returns the next step. Repeat until the run reports that it has finished or that it is waiting for approval.
+
+The step instructions are the authority on what to do. Do not improvise around them, do not skip a step, and do not collapse several steps into one sop_advance call.
+
+If a step cannot be completed, report it as failed with the reason and stop. Leaving an invoice untouched is always correct. Guessing is never correct.
+"""
+
+[cron.reconcile.schedule]
+kind = "cron"                           # schema.rs:12774-12785
+expr = "*/2 * * * *"
+tz = "UTC"
+
+[cron.daily_digest]
+name = "Baixa daily digest"
+job_type = "agent"
+enabled = true
+uses_memory = false
+session_target = "isolated"
+# No http_request and no memory_store. The digest reports the ledger and must
+# not be able to reach the chain or to write. INJECTION_TEST.md vector C leans
+# on daily_digest being read-only; this makes that enforced rather than
+# merely instructed.
+allowed_tools = [
+  "sop_execute", "sop_advance", "sop_status",
+  "memory_recall",
+  "send_message_to_peer",
+]
+prompt = """
+Run the daily_digest SOP now.
+
+Call sop_execute with name "daily_digest", carry out each returned step exactly as written, and report each one with sop_advance until the run finishes. Report only what the ledger says. Never change an invoice status.
+"""
+
+# Local 09:00 stated directly. Etc/GMT-1 is a fixed UTC+1 with no DST — the sign
+# is inverted by POSIX convention. Swap in a city zone such as Europe/Warsaw if
+# the digest should follow daylight saving instead.
+[cron.daily_digest.schedule]
+kind = "cron"
+expr = "0 9 * * *"
+tz = "Etc/GMT-1"
