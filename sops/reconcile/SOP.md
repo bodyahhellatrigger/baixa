@@ -100,21 +100,22 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
      `{"jsonrpc":"2.0","id":1,"method":"getTransaction","params":["<signature>",{"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]}`
    - A `null` result means the transaction is not yet available to this RPC
      node. Treat it as unconfirmed: leave the status unchanged, retry next cycle.
-   - Verify **all four** conditions. Every one must hold:
-     1. `meta.err` is `null`.
-     2. The instruction set contains an SPL token transfer
-        (`spl-token` program, type `transfer` or `transferChecked`) whose `mint`
-        equals `USDC_MINT` exactly.
-     3. That transfer's destination **owner** equals `RECIPIENT_WALLET` exactly.
-        Compare the owner, not the token-account address: read
-        `meta.postTokenBalances[].owner` for the destination account index, and
-        confirm the same entry's `mint` also equals `USDC_MINT`. A destination
-        token account address is not the wallet and must never be compared
-        against `RECIPIENT_WALLET` directly.
-     4. The transferred amount is greater than or equal to the invoice's
-        `amount_usdc`. Compare decimal USDC values: use `uiAmountString`, or
-        divide the raw amount by 10^`decimals`. Never compare a raw base-unit
-        integer against a decimal invoice amount.
+   - Verify all four conditions C1 to C4 below. Every one must hold. If any
+     fails, the invoice is not paid.
+   - C1, no on-chain error: `meta.err` is `null`.
+   - C2, right token: the instruction set contains an SPL token transfer
+     (`spl-token` program, type `transfer` or `transferChecked`) whose `mint`
+     equals `USDC_MINT` exactly.
+   - C3, right destination: that transfer's destination OWNER equals
+     `RECIPIENT_WALLET` exactly. Compare the owner, not the token-account
+     address: read `meta.postTokenBalances[].owner` for the destination account
+     index, and confirm the same entry's `mint` also equals `USDC_MINT`. A
+     destination token account address is not the wallet and must never be
+     compared against `RECIPIENT_WALLET` directly.
+   - C4, enough value: the transferred amount is greater than or equal to the
+     invoice's `amount_usdc`. Compare decimal USDC values: use `uiAmountString`,
+     or divide the raw amount by 10^`decimals`. Never compare a raw base-unit
+     integer against a decimal invoice amount.
    - Extract for each invoice only: `signature`, `verified` (true/false),
      `amount_received`, and `reason` (a short phrase). Nothing else.
    - output: {"type":"object","required":["verdicts"],"properties":{"verdicts":{"type":"array"}}}
@@ -122,23 +123,23 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
 
 4. **Classify** — Turn verdicts into status decisions.
    - Apply exactly these rules, in order, per invoice:
-     - **All four conditions pass** → `status` becomes `paid`. Set
+     - **All four of C1 to C4 pass** → `status` becomes `paid`. Set
        `tx_signature` to the signature and `paid_at` to the RFC 3339 UTC
        timestamp. Note the amount for the notification.
-     - **Conditions 1–3 pass but the amount is short** → `status` becomes
+     - **C1 to C3 pass but the amount is short** → `status` becomes
        `partial`. The invoice stays open for reconciliation purposes: record
        `amount_received` and compute the shortfall. Do not set `tx_signature`
        or `paid_at`.
      - **Amount exceeds the invoice** → this is an overpayment and still
-       satisfies condition 4. Mark it `paid`, and note the overage in the
+       satisfies C4. Mark it `paid`, and note the overage in the
        notification so the operator can refund or credit deliberately.
-     - **Wrong mint** (condition 2 fails) → `status` becomes `flagged`, reason
+     - **Wrong mint** (C2 fails) → `status` becomes `flagged`, reason
        `wrong mint`. Somebody sent a different token to this reference.
-     - **Wrong destination** (condition 3 fails) → `status` becomes `flagged`,
+     - **Wrong destination** (C3 fails) → `status` becomes `flagged`,
        reason `destination mismatch`. This is the loud one: it means an invoice
        went out carrying an address that is not `RECIPIENT_WALLET`. Say so
        explicitly in the notification.
-     - **`meta.err` non-null** (condition 1 fails) → the transaction failed
+     - **`meta.err` non-null** (C1 fails) → the transaction failed
        on-chain. Leave the status unchanged and log it. Not a flag.
      - **More than one verifying signature on the same reference** → mark
        `paid` against the earliest verifying signature, and additionally flag
