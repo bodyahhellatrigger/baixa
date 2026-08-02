@@ -16,7 +16,12 @@ schema_version = 3                       # migration.rs:9 — CURRENT_SCHEMA_VER
 # ─────────────────────────────────────────────────────────────────
 
 [providers.models.anthropic.default]
-model = "claude-sonnet-5"
+# Cost matters here: reconcile fires 720×/day, so the model choice dominates
+# the running bill. See SETUP.md §11 for the estimate and the alternatives.
+#   claude-opus-5    $5 / $25 per 1M tokens (in / out)
+#   claude-sonnet-5  $3 / $15  ($2 / $10 introductory through 2026-08-31)
+#   claude-haiku-4-5 $1 / $5   (200K context, weaker at multi-step verification)
+model = "claude-opus-5"
 api_key = "<ANTHROPIC_API_KEY>"
 
 # ─────────────────────────────────────────────────────────────────
@@ -209,3 +214,39 @@ search_mode = "bm25"                    # schema.rs:10618-10620 — no embedding
 embedding_provider = "none"             # schema.rs:10594-10596 — no API calls
 core_retention_days = 0                 # schema.rs:10591-10593 — keep forever
 auto_save = false                       # schema.rs:10567-10569
+
+# ─────────────────────────────────────────────────────────────────
+# Cost ceiling  (schema.rs:6435-6503 — CostConfig)
+#
+# The defaults are daily $10 / monthly $100 with enforcement mode "warn"
+# (schema.rs:6521-6523). "warn" logs and keeps spending. An agent that fires
+# a cron SOP 720 times a day must not be able to run up an unbounded bill,
+# so this sets an actual ceiling: mode = "block" stops the request instead
+# of logging past it (schema.rs:6510-6512).
+#
+# The rate sheet below is operator-supplied rather than fetched, so the
+# ceiling is computed from known numbers and does not depend on a network
+# lookup of model pricing. See SETUP.md §11.
+# ─────────────────────────────────────────────────────────────────
+
+[cost]
+enabled = true                          # schema.rs:6440-6443
+daily_limit_usd = 3.00                  # schema.rs:6445-6448
+monthly_limit_usd = 20.00               # schema.rs:6450-6453
+warn_at_percent = 60                    # schema.rs:6455-6458
+allow_override = false                  # schema.rs:6460-6463 — no --override escape
+
+[cost.enforcement]
+mode = "block"                          # schema.rs:6510-6512 — not the "warn" default
+
+# Anthropic list pricing per 1M tokens. cached_input is the standard 0.1x
+# cache-read ratio. Update these if the rate card changes.
+[cost.rates.providers.models.anthropic."claude-opus-5"]
+input_per_mtok = 5.0
+output_per_mtok = 25.0
+cached_input_per_mtok = 0.5
+
+[cost.rates.providers.models.anthropic."claude-haiku-4-5"]
+input_per_mtok = 1.0
+output_per_mtok = 5.0
+cached_input_per_mtok = 0.1

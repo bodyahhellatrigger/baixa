@@ -359,3 +359,72 @@ Then:
 
 Then work through INJECTION_TEST.md and record actual results against the
 expected ones.
+
+---
+
+## 11. What this costs to run
+
+Baixa's bill is dominated by one number: `reconcile` fires every two minutes,
+which is **720 runs a day**. Each run is at least one model turn even when
+nothing is open, because step 1 has to read the ledger before it can conclude
+`nothing open`.
+
+### The lever that matters most: don't run it 24/7
+
+The daemon is a foreground process you start and stop (`§7`). Nothing about
+Baixa requires continuous uptime — an invoice that goes unreconciled for six
+hours reconciles on the next run after you start the daemon, because status is
+derived from the chain, not from having watched it happen. Chain state is not
+missed, only observed later.
+
+For a demo, an evaluation, or an operator who bills monthly, running the daemon
+for a few hours a day costs single-digit dollars in total. Running it
+continuously on an Opus-class model does not.
+
+### Order-of-magnitude estimate
+
+These are estimates from the run count and the prompt shape, not measurements.
+Measure your own with `zeroclaw cost` before trusting them.
+
+| Model | $/1M in | $/1M out | ≈ 1 hour, `*/2` | ≈ 24 h, `*/2` |
+|---|---|---|---|---|
+| `claude-opus-5` | 5 | 25 | $1.50–2.50 | $35–60 |
+| `claude-sonnet-5` | 3 | 15 | $0.60–1.00 | $14–24 |
+| `claude-haiku-4-5` | 1 | 5 | $0.30–0.50 | $7–12 |
+
+Two things move these numbers down that are not in the table: prompt caching
+(cache reads bill at roughly a tenth of input) and `[skills]
+prompt_injection_mode = "compact"`, which keeps `SKILL.md` out of the system
+prompt and loads it on demand. Whether ZeroClaw 0.8.3 sets `cache_control` on
+Anthropic requests has not been verified here, so the estimates assume it does
+not. `compact` is left off by default because the reliability of skill-following
+matters more to this project than the saving.
+
+### The ceiling is configured, not assumed
+
+`[cost]` in `config.example.toml` sets `daily_limit_usd = 3.00` and
+`enforcement.mode = "block"`. That second key is the point. ZeroClaw's default
+enforcement mode is `warn` (`schema.rs:6521-6523`), which records the overage
+and keeps spending — a limit that does not limit. `block` refuses the request
+instead.
+
+`allow_override = false` closes the `--override` escape hatch
+(`schema.rs:6460-6463`).
+
+The `[cost.rates.*]` sheet is filled in by hand so the ceiling is computed from
+known list prices rather than a catalog lookup that may not carry the model.
+
+### Other levers, in the order worth trying
+
+1. **Stop the daemon when you are not watching.** Largest effect, no code change.
+2. **Widen the cron.** `*/2` is tuned for a demo where a payment should close
+   while the viewer is still watching. `*/10` cuts model calls fivefold and is
+   more than fast enough for real invoicing. Edit
+   `sops/reconcile/SOP.toml` and restart (`§8`).
+3. **Change the model.** `[providers.models.anthropic.default] model`. Haiku 4.5
+   is five times cheaper than Opus 5 and weaker at the multi-condition
+   verification in reconcile step 3 — which is the step this whole project is
+   about. Downgrade deliberately, not by default.
+4. **`route_down` instead of `block`.** `[cost.enforcement] mode = "route_down"`
+   with `route_down_model` set moves to a cheaper model at the ceiling rather
+   than stopping (`schema.rs:6510-6515`). Untested here.
