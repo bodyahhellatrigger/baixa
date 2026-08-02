@@ -147,7 +147,7 @@ binary carries no WASM plugin host, and Baixa needs none.
 | Piece | What it is | File |
 |---|---|---|
 | `create_invoice` | Skill. Parses free-form input, mints a reference, builds the URL, appends to the ledger, replies with a QR. | `skills/create_invoice/SKILL.md` |
-| `reconcile` | SOP, cron `*/2 * * * *`. Polls RPC, verifies, updates status, notifies, parks on a human checkpoint for destination mismatch. | `sops/reconcile/` |
+| `reconcile` | SOP walked by a `[cron.reconcile]` agent job every two minutes. Polls RPC, verifies four conditions, updates status, notifies, parks on a human checkpoint for destination mismatch. | `sops/reconcile/` |
 | `daily_digest` | SOP, cron `0 8 * * *` (09:00 at UTC+1). Read-only summary. | `sops/daily_digest/` |
 | Config | Provider, agent, risk profile, Telegram, peer group, bundle, SOP dir, HTTP allowlist, memory. | `config.example.toml` |
 
@@ -224,26 +224,160 @@ flag or change a status.
 
 ## Things that cost time, written down
 
-The bounty scores writing down what you hit. Full detail in SETUP.md §9; the
-three that mattered most:
+Every item below was found by **running the thing**, not by reading about it.
+That distinction is the point: each one passed `zeroclaw doctor`, `sop validate`,
+and `skills list` while being broken, and several produced no error at any log
+level. Reading the docs and the schema is what got the config written; running it
+is what found out the config was wrong.
 
-### The docs contradict themselves on whether SOP cron works
+Full detail in SETUP.md §9 and in the commit messages, each of which cites the
+source line that explains the behaviour.
 
-`docs/book/src/sop/fan-in/cron.md:3` says cron triggers are **wired**.
+### A SOP cron trigger fires and then nothing executes it
+
+This is the one that would have sunk the project silently.
+
+The docs contradict each other on whether SOP cron works at all:
+`docs/book/src/sop/fan-in/cron.md:3` says triggers are **wired**;
 `docs/book/src/reference/feature-matrix.md:64-67` says they are "defined and
-matched but not yet routed to a live source." Baixa's entire reconcile loop
-depends on which is true.
+matched but not yet routed to a live source." Reading the source settles the
+first question — `src/main.rs:7829` spawns the maintenance task,
+`sop/dispatch.rs:1233` builds the schedule cache, `dispatch.rs:1311-1343`
+dispatches on schedule. Cron fires. `feature-matrix.md` is stale.
 
-Resolved by reading the source: `src/main.rs:7829` spawns the maintenance task,
-`crates/zeroclaw-runtime/src/sop/dispatch.rs:1233` builds the schedule cache, and
-`dispatch.rs:1311-1343` dispatches events for expressions firing in the window.
-Cron works. `feature-matrix.md` is stale.
+**Firing is not executing.** The daemon hands the dispatch result to
+`process_headless_results` (`src/main.rs:7952`), which is a logger: every branch
+records a line and returns. For an LLM step it records
 
-Two operational consequences that follow from the same code and are easy to miss:
-schedules are parsed once at daemon start (`dispatch.rs:1233`), so **editing a
-SOP requires a daemon restart**; and firing depends on a poll whose period is
-`[sop] maintenance_interval_secs`, default 60 (`schema.rs:22586-22593`), so a
-sub-minute cron would not work even though it validates.
+```
+run ... ready for step 1 'Load open invoices' but no agent loop available to execute
+```
+
+at INFO, and leaves the run `Running` forever. `record_started_run`
+(`sop/dispatch.rs:283-289`) states it outright: only
+`execution_mode = "deterministic"` is driven to a terminal state, because
+deterministic steps need no model. Everything else holds its `max_concurrent`
+slot indefinitely, so the SOP fires exactly once and every later tick is skipped
+with `cooldown or concurrency limit reached`.
+
+Confirmed against the run store rather than the log: `runs.db` held the run with
+`terminal=0` and a live row in `sop_claims`, lease an hour out. `sop deny` returns
+`already_resolved` on such a run because it is Running, not awaiting approval.
+
+Deterministic mode is not open to this SOP either. The builtin capabilities are
+`approval.wait`, `json.validate`, `shell.exec`, `git.status`, `git.diff` and
+`notify.channel` (`sop/capability/builtins.rs:102-244`). None speak HTTP, and
+reconcile exists to query Solana RPC.
+
+Baixa therefore schedules through a declarative `[cron.<alias>]` agent job
+(`CronJobDecl`, `schema.rs:12687-12723`), which runs inside a real agent turn and
+walks the SOP with `sop_execute` / `sop_advance`. The SOPs keep their steps,
+their output contracts, and the step 7 checkpoint. Two things improve on the way
+through: `allowed_tools` on a cron job is a hard allowlist handed to the agent
+run (`cron/scheduler.rs:822`), so `daily_digest` having no `http_request` and no
+`memory_store` stops being an instruction and becomes a runtime constraint; and
+`[cron]` schedules carry `tz`, which the SOP trigger does not, so the digest
+reads `0 9 * * *` in a named zone instead of a UTC hour with a comment.
+
+### A skill can be installed, listed, and still never reach the agent
+
+`create_invoice` never once entered the system prompt. The agent eventually said
+so itself over Telegram: *"I don't have an SOP or skill configured yet to create
+invoices."*
+
+`[skill_bundles.<alias>] include` is compared against the skill's `name:`
+frontmatter field, not its directory name (`skills/mod.rs:652` —
+`if !bundle.admits_skill(&skill.name) { continue; }`). The directory was
+`create_invoice`, the frontmatter said `create-invoice`, the include list said
+`create_invoice`. One character. The skill was filtered out of every turn,
+silently, with no warning at any log level.
+
+What made it expensive: **`zeroclaw skills list` does not apply the include
+filter.** It walks the bundle directory and reports what it finds, so it showed
+the skill as installed for the entire session. A green `skills list` is not
+evidence that an agent has the skill.
+
+The cost of not knowing this was three wrong diagnoses in a row. The model was
+blamed twice for improvising, and the identity prompt once for framing the agent
+as a reconciler. The agent was improvising because it genuinely had no
+instructions; with none to follow, its identity was the only thing left to act
+on. The tell, in hindsight, is unmistakable: **an agent that denies having a
+capability you configured has a name mismatch, not a prompt problem.**
+
+### A classifier decides whether your message deserves a reply
+
+An explicit `invoice Acme Studio 250 USDC for August` over Telegram produced
+silence. No error, nothing at WARN or above. The trace shows the message
+arriving and then:
+
+```
+reply-intent precheck completed
+channel_message_no_reply
+```
+
+Before the agent loop runs, a separate classifier model call decides whether an
+inbound message warrants a response at all
+(`channels/orchestrator/mod.rs:4950-4994`, `ChannelPrecheckConfig` at
+`scattered_types.rs:341-354`). It defaults to enabled, and it classified an
+invoice request as not needing a reply. The agent loop never ran, so nothing
+downstream had a chance to fail loudly.
+
+Off, via `[agents.baixa.precheck] enabled = false`. Baixa has exactly one
+authorized sender, pre-authorized by numeric ID. Every message reaching it is by
+definition for it, and a classifier that can decide otherwise is a silent failure
+mode on the issuing path.
+
+### A three-name denylist is not a tool policy
+
+The risk profile originally carried `excluded_tools = [shell, file_write,
+file_edit]`, and THREAT_MODEL.md claimed on that basis that the agent had no
+filesystem access. A live run showed it calling `file_read` and `glob_search` and
+offering to browse the workspace for an invoices directory.
+
+Two defects in one line. A three-name denylist admits every tool nobody thought
+to name. And `excluded_tools` is scoped: the schema documents it as "Tools
+excluded from **non-CLI channels** under this profile"
+(`schema.rs:11841-11847`), so it never applied to `zeroclaw agent` at all.
+
+Now `allowed_tools` names the seven tools Baixa needs
+(`schema.rs:11812-11840`); anything unnamed is unreachable. Startup confirms it:
+55 registered tools narrowed to 7 for the agent, and to 5 inside the
+`daily_digest` cron job. `excluded_tools` stays as a redundant second statement
+about the three worst offenders, not as the mechanism.
+
+This one is also a correction to an earlier version of this repository's own
+threat model, which is why it is written down rather than quietly fixed.
+
+### `uses_memory = false` deletes the memory tools
+
+The name reads like "do not inject recalled context." The scheduler maps it to
+`memory_free` (`cron/scheduler.rs:795-800`), which installs a null Memory
+(`agent/loop_.rs:1230`) and sets `exclude_memory` (`:1333`), which strips every
+`MEMORY_TOOL_NAMES` entry from the registry (`tools/scoped.rs:238`).
+
+The Baixa ledger is a memory record, so this deleted the ledger. The visible
+symptom was three layers away: `memory_recall` returned `Unknown tool`, the agent
+reported the step failed with a prose reason, and the engine then rejected that
+prose against the step's output contract. What surfaced was a schema mismatch.
+Two rounds of prompt edits went into the wrong layer before the tool trace showed
+the real failure.
+
+### A transport error that reads as "nobody paid"
+
+Live reconcile runs were getting `HTTP 415` on every RPC call. ZeroClaw's
+`http_request` does not set a Content-Type of its own, and the tool exposes
+`headers` for exactly this (`zeroclaw-tools/src/http_request.rs:460-464`).
+Confirmed directly against the endpoint: no header returns 415, `Content-Type:
+application/json` returns 200.
+
+The worse half was the agent's reaction. Step 2 answered a 415 with
+`{"candidates": []}` — the same output it produces when nobody has paid. A
+transport failure and a genuinely unpaid invoice became indistinguishable, so a
+broken or rate-limited endpoint would have held every invoice open indefinitely
+while the run reported success and the digest reported nothing wrong. The
+file-level fail-closed rule was not enough because it lived several screens above
+the step; both request steps now say at the point of action that a non-2xx status
+fails the step.
 
 ### Approval matches on tool name and ignores the HTTP method
 
@@ -311,6 +445,18 @@ none of them reachable from chat.
   interception point without a plugin. Baixa keeps it inside one step, out of
   memory, and away from the operator. Genuinely shaping it to ~200 tokens before
   it hits context is a T2 job. THREAT_MODEL.md §6.
+- **Step output contracts are advisory, not enforced.** `[sop]
+  step_schema_enforce` defaults to `true` and fails any step whose final message
+  is not exactly the declared shape (`schema.rs:22835-22837`). On the
+  agent-driven path that message is whatever the model last said, and observed
+  rejections included a correct object wrapped in a ```` ```json ```` fence and a
+  correct object preceded by one sentence of correct reasoning. Both got the work
+  right and the wrapper wrong. Failing a payments reconciliation over a stray
+  sentence is worse than proceeding, so enforcement is off and the contracts
+  remain as documentation plus best-effort structure. Parsing into run data does
+  not depend on the flag (`sop/rundata.rs:67-85`), so the step 5 routing value
+  still populates; fail-closed behaviour comes from the step instructions and
+  per-step `on_failure: fail`, neither of which depends on formatting.
 
 Each of those is a real gap with a named fix. None of them touches custody.
 
