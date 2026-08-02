@@ -87,6 +87,7 @@ Edit `~/.zeroclaw/config.toml` and replace every `<PLACEHOLDER>`:
 | `<HELIUS_API_KEY>` | your Helius API key, inside `SOLANA_RPC_URL` in `aieos_inline` |
 | `<OPERATOR_TELEGRAM_NUMERIC_ID>` | your numeric Telegram user ID |
 | `<ABSOLUTE_PATH_TO>/sops` | absolute path, e.g. `/home/you/.zeroclaw/workspace/sops` |
+| `<ABSOLUTE_PATH_TO_WORKSPACE>/brain.db` | absolute path, e.g. `/home/you/.zeroclaw/data/brain.db` |
 
 **Then do the same in three more places.** The recipient and mint appear in
 three independent operator-written files and all three must agree:
@@ -108,6 +109,25 @@ zeroclaw config set channels.telegram.home.bot_token
 
 `bot_token` is a `#[secret]` field and is stored encrypted
 (`crates/zeroclaw-config/src/schema.rs:13749-13760`).
+
+### Do not delete `[storage.sqlite.default]`
+
+`[memory] backend = "sqlite"` does not, on its own, give the agent a memory.
+`resolve_active_storage` (`schema.rs:4446-4458`) splits that string into a kind
+and an alias, defaults the alias to `default`, and looks the pair up in
+`[storage.sqlite]`. When the alias is absent it returns `ActiveStorage::None`
+and **does not raise an error**.
+
+The whole Baixa ledger lives in memory, so this failure removes the ledger.
+Nothing in `zeroclaw doctor`, `config list`, or `sop validate` reports it. The
+only signal is one word in the daemon banner:
+
+```
+  🧠 Memory:   none (auto-save: off)      <- broken, ledger has nowhere to live
+  🧠 Memory:   sqlite (auto-save: off)    <- correct
+```
+
+Read that line every time you start the daemon.
 
 ## 5. Authorize yourself
 

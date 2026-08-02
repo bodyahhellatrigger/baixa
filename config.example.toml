@@ -250,3 +250,21 @@ cached_input_per_mtok = 0.5
 input_per_mtok = 1.0
 output_per_mtok = 5.0
 cached_input_per_mtok = 0.1
+
+# ─────────────────────────────────────────────────────────────────
+# Storage backend  (schema.rs:10403-10410 — SqliteStorageConfig)
+#
+# REQUIRED. `[memory] backend = "sqlite"` on its own is not enough:
+# resolve_active_storage (schema.rs:4446-4458) splits the backend string
+# into kind + alias, defaults the alias to `default`, and looks it up in
+# [storage.sqlite]. A missing alias returns ActiveStorage::None WITHOUT an
+# error, so memory silently does not exist and the ledger has nowhere to
+# live. The daemon banner prints `🧠 Memory: none` and nothing else warns.
+#
+# path unset defaults to <workspace_dir>/brain.db (schema.rs:10404-10406).
+# Set it explicitly so the ledger location is not implied.
+# ─────────────────────────────────────────────────────────────────
+
+[storage.sqlite.default]
+path = "<ABSOLUTE_PATH_TO_WORKSPACE>/brain.db"                # schema.rs:10404-10406
+open_timeout_secs = 30                   # schema.rs:10407-10409
