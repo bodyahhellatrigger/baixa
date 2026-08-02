@@ -26,6 +26,28 @@ expansion of `default` plus `dist_extra_features`
 `plugins-wasm` (`Cargo.toml:394`, `:427-429`). Nothing here needs a source
 build.
 
+### If `zeroclaw` is not found afterwards (macOS + bash)
+
+The installer puts the binary in `~/.cargo/bin` and appends the `PATH` export
+to `~/.bashrc`. Terminal.app starts bash as a **login** shell, and a login
+bash reads `~/.bash_profile` and never `~/.bashrc`. If your `.bash_profile`
+does not source `.bashrc`, the export never runs and every `zeroclaw` command
+reports `command not found` even though the binary is installed.
+
+```sh
+cat >> ~/.bash_profile <<'EOF'
+if [ -f "$HOME/.bashrc" ]; then
+  . "$HOME/.bashrc"
+fi
+EOF
+```
+
+Open a new terminal, then check:
+
+```sh
+zeroclaw --version    # zeroclaw 0.8.3
+```
+
 ## 2. Create the Telegram bot
 
 Open [@BotFather](https://t.me/BotFather), send `/newbot`, follow the prompts,
