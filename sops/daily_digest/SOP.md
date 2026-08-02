@@ -19,9 +19,26 @@ USDC_MINT        = <USDC_MINT_ADDRESS>
 
 1. **Read the ledger** — One recall, no chain access.
    - tools: memory_recall
-   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`, and parse
-     the JSON array. An empty or missing ledger means nothing to report: send
-     `📋 Baixa — ledger empty` and finish.
+   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`.
+   - `memory_recall` is a search, not a key lookup. When no `baixa_ledger`
+     record exists it returns the closest matches instead, which on a quiet
+     deployment are this SOP's own audit entries. Treat any result whose key is
+     not exactly `baixa_ledger` as no ledger at all.
+   - An empty or missing ledger means nothing to report: reply with exactly
+     `{"invoices": []}` and finish. Step 3 will send `📋 Baixa — ledger empty`.
+   - Otherwise parse the JSON array.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"invoices": [ ... ]}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["invoices"],"properties":{"invoices":{"type":"array"}}}
    - on_failure: fail
 
@@ -38,6 +55,18 @@ USDC_MINT        = <USDC_MINT_ADDRESS>
      `destination mismatch` must read as `destination mismatch`.
    - **Running total received** — sum `amount_usdc` across every entry whose
      `status` is `paid`, for all time.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"sections": { ... }}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["sections"],"properties":{"sections":{"type":"object"}}}
    - on_failure: fail
 

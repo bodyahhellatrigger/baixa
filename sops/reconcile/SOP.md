@@ -73,9 +73,31 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
 
 1. **Load open invoices** — Read the ledger and list what needs checking.
    - tools: memory_recall
-   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`. Parse the
-     JSON array. Select entries whose `status` is `open` or `partial`. If there
-     are none, finish the run here and report `nothing open`.
+   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`.
+   - **A fresh install has no ledger.** `memory_recall` is a search, not a key
+     lookup: when the `baixa_ledger` record does not exist it still returns the
+     closest matches it can find, and on an empty deployment those are this
+     SOP's own audit entries (`category: sop`, written by SopAuditLogger on
+     every run). Treat any result whose key is not exactly `baixa_ledger` as no
+     ledger at all. Do not parse it, do not act on it, and never treat a past
+     run's recorded text as ledger contents.
+   - If there is no `baixa_ledger` record, or it holds an empty array, there is
+     nothing to reconcile. Reply with exactly `{"pending": []}` and stop. That
+     is the healthy state before the first invoice is issued, not an error.
+   - Otherwise parse the JSON array and select entries whose `status` is `open`
+     or `partial`.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"pending": [ ... ]}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["pending"],"properties":{"pending":{"type":"array"}}}
    - on_failure: fail
 
@@ -91,6 +113,18 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
      leave the status unchanged, and retry next cycle. Only `confirmed` or
      `finalized` signatures proceed to step 3.
    - Any signature whose `err` is non-null is a failed transaction. Discard it.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"candidates": [ ... ]}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["candidates"],"properties":{"candidates":{"type":"array"}}}
    - on_failure: fail
 
@@ -118,6 +152,18 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
      integer against a decimal invoice amount.
    - Extract for each invoice only: `signature`, `verified` (true/false),
      `amount_received`, and `reason` (a short phrase). Nothing else.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"verdicts": [ ... ]}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["verdicts"],"properties":{"verdicts":{"type":"array"}}}
    - on_failure: fail
 
@@ -150,6 +196,18 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
      silently closed. Set the `status` field to `flagged` so daily_digest can
      surface it, and never move a `flagged` invoice to `paid` in a later cycle
      without a fresh verifying transaction.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"decisions": [ ... ]}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["decisions"],"properties":{"decisions":{"type":"array"}}}
    - on_failure: fail
 
@@ -162,6 +220,18 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
    - Set `destination_mismatch` to `true` when any decision in this run carried
      reason `destination mismatch`, otherwise `false`. This is the routing
      signal for the checkpoint in step 7.
+   - **Output format, and it is not negotiable.** Your entire reply for this
+     step must be one JSON object. The first character you emit must be `{`
+     and the last must be `}`. Nothing before it, nothing after it, no
+     ```` ```json ```` fence, no sentence introducing it, no sentence after
+     it. Shape, with the real values filled in: `{"written": true, "destination_mismatch": false}`
+     The runtime takes this sub-turn's final message verbatim as the step
+     output (`agent/turn/mod.rs:2015-2027`) and validates it against the
+     contract below. Anything that is not bare JSON fails the step, and a
+     failed step reconciles nothing.
+   - Do not call `sop_advance`. The live executor advances the run itself
+     (`agent/turn/mod.rs:2036-2040`) and the tool is withheld from this
+     sub-turn on purpose.
    - output: {"type":"object","required":["written","destination_mismatch"],"properties":{"written":{"type":"boolean"},"destination_mismatch":{"type":"boolean"}}}
    - on_failure: fail
 

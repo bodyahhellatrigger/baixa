@@ -21,7 +21,7 @@ schema_version = 3                       # migration.rs:9 — CURRENT_SCHEMA_VER
 #   claude-opus-5    $5 / $25 per 1M tokens (in / out)
 #   claude-sonnet-5  $3 / $15  ($2 / $10 introductory through 2026-08-31)
 #   claude-haiku-4-5 $1 / $5   (200K context, weaker at multi-step verification)
-model = "claude-opus-5"
+model = "claude-haiku-4-5"
 api_key = "<ANTHROPIC_API_KEY>"
 
 # ─────────────────────────────────────────────────────────────────
@@ -180,6 +180,30 @@ approval_timeout_action = "escalate"    # schema.rs:22619-22624 — fail-closed
 # a gate nobody answers re-surfaces forever and never self-approves.
 approval_mode = "out_of_band_required"  # schema.rs:22613-22617
 
+# Step output contracts are advisory here, not enforced.
+#
+# The `- output:` schemas in sops/*/SOP.md describe what each step should hand
+# forward, and one of them is load-bearing: step 6 of reconcile routes on
+# $.steps.5.destination_mismatch. Parsing the step output into run data is
+# independent of this flag (sop/rundata.rs:67-85 runs either way), so a step
+# that does emit JSON still populates the routing value.
+#
+# What the flag controls is rejection. With the default `true`
+# (schema.rs:22835-22837), a step whose final message is not exactly the
+# declared shape is failed outright. On the agent-driven path the step output is
+# whatever the model's last message happens to be, and it is legitimately hard
+# to keep that to bare JSON: observed failures included a ```json fence around
+# a correct object, and a correct object preceded by one sentence of correct
+# reasoning about why the ledger was absent. Both were right about the work and
+# wrong about the wrapper.
+#
+# Failing a payments reconciliation because a model added a sentence is worse
+# than proceeding: reconcile is idempotent, derives status only from RPC, and
+# already fails closed through its own instructions and per-step
+# `on_failure: fail`. So the contracts stay as documentation and as best-effort
+# structure, and the enforcement that rejects on formatting is off.
+step_schema_enforce = false             # schema.rs:22646-22647
+
 # ─────────────────────────────────────────────────────────────────
 # HTTP  (schema.rs:372-376 — HttpRequestConfig at schema.rs:7473)
 #
@@ -295,32 +319,48 @@ open_timeout_secs = 30                   # schema.rs:10407-10409
 # scheduler-mutation exclusions, so the list below must be complete and must
 # not name a tool this job has no business calling.
 #
-# uses_memory = false because both SOPs recall the ledger themselves by key.
-# Automatic memory injection would prepend recalled text — including any
-# poisoned invoice description already in the ledger — to the job prompt for
-# no benefit. See INJECTION_TEST.md vector C.
+# uses_memory MUST be true. The name suggests it only controls whether recalled
+# context is injected into the prompt, and that reading is wrong: the scheduler
+# maps it to memory_free (cron/scheduler.rs:795-800), which swaps in a null
+# Memory (agent/loop_.rs:1230) and sets exclude_memory (:1333), which strips
+# every name in MEMORY_TOOL_NAMES from the tool registry (tools/scoped.rs:238).
+#
+# Setting it false cost a full debugging cycle here. The SOP called
+# memory_recall and got "Unknown tool: memory_recall", reported the step as
+# failed, and the engine then rejected the failure string against the step's
+# output contract — so the visible error was a schema mismatch several layers
+# away from the cause. The ledger is a memory record; without the memory tools
+# Baixa has no ledger.
+#
+# The cost of true is that recalled context is injected into the job prompt.
+# That context is wrapped in an EXTERNAL_UNTRUSTED_CONTENT block by the
+# runtime, and both SOPs treat ledger contents as data. See INJECTION_TEST.md
+# vector C.
 # ─────────────────────────────────────────────────────────────────
 
 [cron.reconcile]
 name = "Baixa reconcile"
 job_type = "agent"                      # schema.rs:12691-12693
 enabled = true
-uses_memory = false                     # schema.rs:12713-12716
+uses_memory = true                      # schema.rs:12713-12716
 session_target = "isolated"             # schema.rs:12717-12719 — no cross-run bleed
 allowed_tools = [                       # schema.rs:12709-12712
-  "sop_execute", "sop_advance", "sop_status",
+  "sop_execute",
   "memory_recall", "memory_store",
   "http_request",
   "send_message_to_peer",
 ]
 prompt = """
+
 Run the reconcile SOP now.
 
-Call sop_execute with name "reconcile". It returns a run_id and the first step instruction. Carry out that step exactly as written, then call sop_advance with that run_id, a status of completed or failed, and a one-line summary. sop_advance returns the next step. Repeat until the run reports that it has finished or that it is waiting for approval.
+Call sop_execute with name "reconcile". That is the only call you need to make.
+The SOP live executor runs every step itself as a nested sub-turn, takes each
+sub-turn's final message as that step's output, and advances the run
+(agent/turn/mod.rs:2015-2040). Do not call sop_advance; it is deliberately
+withheld from step sub-turns.
 
-The step instructions are the authority on what to do. Do not improvise around them, do not skip a step, and do not collapse several steps into one sop_advance call.
-
-If a step cannot be completed, report it as failed with the reason and stop. Leaving an invoice untouched is always correct. Guessing is never correct.
+Report back what the run did in one short line.
 """
 
 [cron.reconcile.schedule]
@@ -332,21 +372,24 @@ tz = "UTC"
 name = "Baixa daily digest"
 job_type = "agent"
 enabled = true
-uses_memory = false
+uses_memory = true
 session_target = "isolated"
 # No http_request and no memory_store. The digest reports the ledger and must
 # not be able to reach the chain or to write. INJECTION_TEST.md vector C leans
 # on daily_digest being read-only; this makes that enforced rather than
 # merely instructed.
 allowed_tools = [
-  "sop_execute", "sop_advance", "sop_status",
+  "sop_execute",
   "memory_recall",
   "send_message_to_peer",
 ]
 prompt = """
+
 Run the daily_digest SOP now.
 
-Call sop_execute with name "daily_digest", carry out each returned step exactly as written, and report each one with sop_advance until the run finishes. Report only what the ledger says. Never change an invoice status.
+Call sop_execute with name "daily_digest" and let the live executor run the
+steps. Do not call sop_advance. Report only what the ledger says and never
+change an invoice status.
 """
 
 # Local 09:00 stated directly. Etc/GMT-1 is a fixed UTC+1 with no DST — the sign
