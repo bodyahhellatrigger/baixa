@@ -103,8 +103,16 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
 
 2. **Fetch signatures per reference** — Ask the chain what touched each reference.
    - tools: http_request
-   - For each pending invoice, POST to `SOLANA_RPC_URL`:
+   - For each pending invoice, POST to `SOLANA_RPC_URL` with
+     `headers: {"Content-Type": "application/json"}` and body
      `{"jsonrpc":"2.0","id":1,"method":"getSignaturesForAddress","params":["<reference_pubkey>",{"limit":5}]}`
+   - The header is required. Without it the RPC endpoint answers `HTTP 415`
+     and no signature is ever seen. Observed live on 2026-08-02.
+   - **A non-2xx status is an error, not an empty result.** `HTTP 415`, `429`,
+     `500` and every other failure mean the chain was not consulted. Report this
+     step as `failed` with the status code. Never report `{"candidates": []}`
+     on a transport error: that is indistinguishable from "nobody has paid" and
+     would let a broken endpoint silently hold every invoice open forever.
    - Keep only `signature`, `err`, and `confirmationStatus` from each result.
      Discard everything else before moving on.
    - An empty `result` array means nobody has paid yet. That is the normal case,
@@ -130,8 +138,11 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
 
 3. **Fetch and verify each candidate transaction** — The actual check.
    - tools: http_request
-   - For each candidate signature, POST to `SOLANA_RPC_URL`:
+   - For each candidate signature, POST to `SOLANA_RPC_URL` with
+     `headers: {"Content-Type": "application/json"}` and body
      `{"jsonrpc":"2.0","id":1,"method":"getTransaction","params":["<signature>",{"encoding":"jsonParsed","maxSupportedTransactionVersion":0}]}`
+   - The header is required, as in step 2. A non-2xx status is an error: report
+     the step as `failed` and leave every status untouched.
    - A `null` result means the transaction is not yet available to this RPC
      node. Treat it as unconfirmed: leave the status unchanged, retry next cycle.
    - Verify all four conditions C1 to C4 below. Every one must hold. If any
