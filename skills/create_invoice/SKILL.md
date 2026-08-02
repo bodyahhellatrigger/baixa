@@ -1,5 +1,5 @@
 ---
-name: create-invoice
+name: create_invoice
 description: Issues a Solana Pay USDC invoice from a free-form operator request. Parses counterparty, amount and description, mints a unique payment reference, builds the solana: URL from operator constants only, appends the invoice to the Baixa ledger with status open, and replies with a compact summary and a QR code. Use whenever the operator asks to invoice, bill, or charge someone in USDC.
 version: 0.1.0
 author: baixa

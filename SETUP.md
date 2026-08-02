@@ -162,6 +162,32 @@ zeroclaw sop pending
 zeroclaw sop deny <run-id>
 ```
 
+### The bundle `include` list matches the skill NAME, not the directory
+
+`[skill_bundles.baixa] include` is compared against each skill's `name:`
+frontmatter field, not against its directory name
+(`skills/mod.rs:652` — `if !bundle.admits_skill(&skill.name) { continue; }`).
+
+This cost most of a debugging session. The directory was `create_invoice`, the
+frontmatter said `name: create-invoice`, and the include list said
+`create_invoice`. The names never matched, so the skill was dropped from the
+agent's prompt on every turn — silently, with no warning at any log level.
+
+What made it hard to see: **`zeroclaw skills list` does not apply the include
+filter.** It walks the bundle directory and reports what it finds, so it showed
+`create-invoice v0.1.0` as installed the whole time the agent could not see it.
+A green `skills list` is not evidence that an agent has the skill.
+
+The symptom at the other end was an agent that improvised: asked the operator
+for a transaction signature to "reconcile" an issuing request, offered to draft
+a workflow, and eventually said outright that it had no skill configured for
+creating invoices. That last reply is the reliable tell — if the agent denies
+having a capability you configured, check the name match before touching
+prompts or models.
+
+Keep the directory name, the `name:` frontmatter, and the `include` entry
+identical. All three are `create_invoice` here.
+
 ## 5. Authorize yourself
 
 `[peer_groups.baixa_operator]` in the example config pre-authorizes you. Put
