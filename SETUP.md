@@ -62,7 +62,7 @@ Edit `~/.zeroclaw/config.toml` and replace every `<PLACEHOLDER>`:
 | `<ANTHROPIC_API_KEY>` | your provider key |
 | `<RECIPIENT_SOLANA_ADDRESS>` | the wallet that receives USDC |
 | `<USDC_MINT_ADDRESS>` | `EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v` on mainnet |
-| `<SOLANA_RPC_HOST>` | RPC hostname, no scheme (e.g. `api.mainnet-beta.solana.com`) |
+| `<HELIUS_API_KEY>` | your Helius API key, inside `SOLANA_RPC_URL` in `aieos_inline` |
 | `<OPERATOR_TELEGRAM_NUMERIC_ID>` | your numeric Telegram user ID |
 | `<ABSOLUTE_PATH_TO>/sops` | absolute path, e.g. `/home/you/.zeroclaw/workspace/sops` |
 
