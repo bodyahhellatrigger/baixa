@@ -379,6 +379,91 @@ file-level fail-closed rule was not enough because it lived several screens abov
 the step; both request steps now say at the point of action that a non-2xx status
 fails the step.
 
+### The ledger disappears from its own memory store
+
+The worst of the eleven, because it fails while reporting success.
+
+The Baixa ledger is one memory record under the key `baixa_ledger`. Step 1 of
+reconcile reads it with `memory_recall`. After a few hours of running, that
+recall stopped returning the ledger and started returning **this SOP's own past
+runs**, and reconcile began reporting `{"pending": []}` while two invoices sat
+open.
+
+The mechanism is a feedback loop. `SopAuditLogger` writes one record per step
+into the same memory store as the ledger, unconditionally — there is no config
+switch and the daemon always constructs it against live memory
+(`src/main.rs:9601`). Each record embeds that step's tool calls *together with
+their outputs*. So the output of a `memory_recall` for `baixa_ledger` becomes
+searchable text containing the string `baixa_ledger` several times over, while
+the real ledger record contains it only in its key and holds invoice JSON in its
+body. `memory_recall` is BM25 with no exact-key or category filter
+(`zeroclaw-tools/src/memory_recall.rs:29-56`). Audit records therefore outrank
+the ledger for its own key, and each cycle writes a denser one.
+
+What saved the data was a rule already in step 1: treat any result whose key is
+not exactly `baixa_ledger` as no ledger at all. It fired correctly and returned
+an empty pending list. Nothing was corrupted. Nothing was reconciled either, and
+every run reported `completed`.
+
+Mitigated at Tier 1 by raising the recall limit to 25 and selecting the entry by
+exact key, with an explicit instruction that a stale `{"pending": []}` recovered
+from a past step result is indistinguishable from a healthy empty ledger. That is
+a mitigation, not a fix: at 720 runs a day the audit will eventually push the
+ledger past rank 25 as well. The honest statement is that a ledger does not
+belong in a shared searchable store, and Tier 1 offers no other one.
+
+### A cost ceiling that only covers models it has prices for
+
+`[cost] daily_limit_usd = 3.00` with `enforcement.mode = "block"` was added
+specifically so an agent firing 720 times a day could not run up an unbounded
+bill. It did not work.
+
+The block fires when the runtime believes the limit is reached, and the runtime
+prices a call from `[cost.rates.*]`. A model absent from that sheet costs
+$0.00 — so the limit is never reached.
+
+The sheet listed `claude-opus-5` and `claude-haiku-4-5`. The provider model was
+switched to `claude-sonnet-4-5` and no row was added. From
+`state/costs.jsonl`:
+
+| Model | Calls | Input tokens | Tracked | Real |
+|---|---:|---:|---:|---:|
+| `claude-sonnet-4-5` | 233 | 3,016,851 | $0.00 | **$9.28** |
+| `claude-haiku-4-5` | 195 | 1,318,153 | $0.64 | $1.37 |
+| `claude-opus-5` | 26 | 128,966 | $0.40 | $0.80 |
+| | | | **$1.04** | **$11.44** |
+
+The counter read a third of the ceiling while the real bill was nearly four times
+it. Nothing surfaced it: a $0.00 model is indistinguishable from a cheap one in
+`zeroclaw status`.
+
+This one is ours, not the platform's. The ceiling was presented in an earlier
+version of this repository as a real control, and switching models without
+updating the rate sheet made it inert for the only model in use.
+
+The same data locates the actual spend: 3.0M input tokens across 233 calls is
+roughly 13,000 per call, which is the system prompt with every skill body inlined
+at `prompt_injection_mode = "full"`, re-sent every time. The dominant cost of a
+scheduled agent is re-transmitting its instructions.
+
+### Bundle skills never appear in the Telegram command menu
+
+The bot had no product surface. Pressing `/` in Telegram listed 13 built-in
+runtime commands and nothing about invoicing, while three skills were installed
+and working.
+
+`register_bot_commands` builds that menu from `load_skills(workspace_dir)`
+(`channels/telegram.rs:1010`) and registers each skill's `name` and `description`
+as a `/command` via `setMyCommands` (`:988-1069`). It reads the **workspace**
+skills directory only. Bundle skills reach the agent's system prompt and never
+reach the menu, so a bundle-only install is fully functional and completely
+invisible to the operator.
+
+Both sources load into the prompt and workspace wins a name collision
+(`skills/mod.rs:655-660`), which makes "install in both" a silent duplication
+with a drift hazard — the same shape as the `include` mismatch above. Baixa keeps
+skills in the workspace directory and has no bundle.
+
 ### Approval matches on tool name and ignores the HTTP method
 
 `docs/book/src/tools/overview.md:89-93` describes a low/medium/high risk model

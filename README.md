@@ -62,7 +62,7 @@ Honesty here is deliberate. A reader should be able to tell demonstration from c
 
 ## What this project is actually worth reading for
 
-The agent works. So will most submissions. The part that took the time is documented in [SUBMISSION.md](SUBMISSION.md) under *Things that cost time*: eleven defects in the platform and in this repository's own configuration, each with a source citation.
+The agent works. So will most submissions. The part that took the time is documented in [SUBMISSION.md](SUBMISSION.md) under *Things that cost time*: twelve defects in the platform and in this repository's own configuration, each with a source citation.
 
 Every one of them was found by **running the thing**. Each passed `zeroclaw doctor`, `sop validate`, and `skills list` while broken, and several produced no error at any log level.
 
@@ -74,7 +74,7 @@ A sample:
 - **The cost ceiling only covers models named in the rate sheet.** A model absent from `[cost.rates.*]` is priced at $0.00, so `enforcement.mode = "block"` never fires. Measured: a $3.00 daily cap read $1.04 while the real bill was $11.44.
 - **The ledger disappears from its own store.** The SOP audit logger writes each step, including its tool calls *and their outputs*, into the same memory the ledger lives in. A `memory_recall` for `baixa_ledger` therefore becomes searchable text containing `baixa_ledger`, outranking the real record. Reconciliation then reports success while silently checking nothing.
 
-Two of those eleven are corrections to this repository's own earlier claims. They are written down as corrections rather than quietly fixed, and the commit history shows both the wrong diagnosis and the right one.
+Three of those twelve are corrections to this repository's own earlier claims. They are written down as corrections rather than quietly fixed, and the commit history shows both the wrong diagnosis and the right one.
 
 ---
 
@@ -82,10 +82,10 @@ Two of those eleven are corrections to this repository's own earlier claims. The
 
 Without installing anything:
 
-1. [SUBMISSION.md](SUBMISSION.md) — the thesis, the failure-path matrix, and the eleven findings with source lines
+1. [SUBMISSION.md](SUBMISSION.md) — the thesis, the failure-path matrix, and the twelve findings with source lines
 2. [THREAT_MODEL.md](THREAT_MODEL.md) — what is structural, what is behavioural, and what is not claimed
 3. [INJECTION_TEST.md](INJECTION_TEST.md) — five attacks, each with the expected result written before the run and the live transcript after
-4. `git log` — 31 commits. The messages carry the reasoning, including two reversed diagnoses
+4. `git log` — the messages carry the reasoning, including three reversed diagnoses
 
 To run it: [SETUP.md](SETUP.md). It includes the traps above as numbered sections, so a reader reproducing this does not lose the same day.
 
