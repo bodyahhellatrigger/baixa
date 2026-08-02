@@ -470,6 +470,40 @@ which is **720 runs a day**. Each run is at least one model turn even when
 nothing is open, because step 1 has to read the ledger before it can conclude
 `nothing open`.
 
+### The cost ceiling only covers models named in `[cost.rates.*]`
+
+`enforcement.mode = "block"` refuses a request once `daily_limit_usd` is
+reached. Reaching it requires the runtime to know what the model costs. **A
+model absent from the rate sheet is priced at $0.00, so the limit is never
+reached and the block never fires.**
+
+Measured on this deployment. The sheet listed `claude-opus-5` and
+`claude-haiku-4-5`. The provider model was switched to `claude-sonnet-4-5` and
+no row was added:
+
+| Model | Calls | Input tokens | Tracked | Real |
+|---|---:|---:|---:|---:|
+| `claude-sonnet-4-5` | 233 | 3,016,851 | $0.00 | **$9.28** |
+| `claude-haiku-4-5` | 195 | 1,318,153 | $0.64 | $1.37 |
+| `claude-opus-5` | 26 | 128,966 | $0.40 | $0.80 |
+| | | | **$1.04** | **$11.44** |
+
+The counter read $1.04 against a $3.00 ceiling while the real bill was over
+eleven dollars. Nothing in `zeroclaw status` indicated a problem — a $0.00 model
+looks identical to a cheap one.
+
+**Add a row for every model you might switch to, before you switch to it.** The
+example config now prices five. Audit your own spend from
+`<workspace>/state/costs.jsonl`, which records per-call `input_tokens`,
+`output_tokens`, and the runtime's `cost_usd` — comparing that last field
+against the published rate card is how this was found.
+
+The second number in that table matters as much as the first: 3.0M input tokens
+across 233 calls is roughly 13,000 tokens per call. That is the system prompt,
+with every skill body inlined at `prompt_injection_mode = "full"`, re-sent on
+every call. At 720 reconcile runs a day the dominant cost is re-transmitting
+instructions, not doing work.
+
 ### The lever that matters most: don't run it 24/7
 
 The daemon is a foreground process you start and stop (`§7`). Nothing about

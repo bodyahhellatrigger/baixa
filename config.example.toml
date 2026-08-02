@@ -456,3 +456,28 @@ change an invoice status.
 kind = "cron"
 expr = "0 9 * * *"
 tz = "Etc/GMT-1"
+
+# Every model that could ever run MUST have a row here, including ones you
+# only tried once. A model absent from this sheet is priced at $0.00, so
+# daily_limit_usd is never reached and enforcement.mode = "block" never fires.
+#
+# This is not hypothetical. The rate sheet originally listed only opus-5 and
+# haiku-4-5. The provider model was then switched to claude-sonnet-4-5 without
+# adding a row, and 233 calls totalling 3.0M input tokens were recorded at
+# $0.00 each. The local counter read $1.04 against a $3.00 ceiling while the
+# real bill was about $11.44. The cap was inert for the one model actually in
+# use, and nothing in `zeroclaw status` showed it.
+[cost.rates.providers.models.anthropic."claude-sonnet-4-5"]
+input_per_mtok = 3.0
+output_per_mtok = 15.0
+cached_input_per_mtok = 0.3
+
+[cost.rates.providers.models.anthropic."claude-opus-4-5"]
+input_per_mtok = 5.0
+output_per_mtok = 25.0
+cached_input_per_mtok = 0.5
+
+[cost.rates.providers.models.anthropic."claude-sonnet-5"]
+input_per_mtok = 3.0
+output_per_mtok = 15.0
+cached_input_per_mtok = 0.3
