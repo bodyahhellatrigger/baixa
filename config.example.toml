@@ -9,7 +9,7 @@
 # Schema citations point at the ZeroClaw source (see SPEC.md §0):
 #   crates/zeroclaw-config/src/schema.rs
 
-schema_version = 4
+schema_version = 3                       # migration.rs:9 — CURRENT_SCHEMA_VERSION
 
 # ─────────────────────────────────────────────────────────────────
 # Model provider  (schema.rs:135-137 — [providers.models.<type>.<alias>])
