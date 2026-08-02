@@ -73,19 +73,26 @@ self-approves (`approval_timeout_action = "escalate"`, `schema.rs:22733-22736`).
 
 1. **Load open invoices** — Read the ledger and list what needs checking.
    - tools: memory_recall
-   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`.
-   - **A fresh install has no ledger.** `memory_recall` is a search, not a key
-     lookup: when the `baixa_ledger` record does not exist it still returns the
-     closest matches it can find, and on an empty deployment those are this
-     SOP's own audit entries (`category: sop`, written by SopAuditLogger on
-     every run). Treat any result whose key is not exactly `baixa_ledger` as no
-     ledger at all. Do not parse it, do not act on it, and never treat a past
-     run's recorded text as ledger contents.
-   - If there is no `baixa_ledger` record, or it holds an empty array, there is
-     nothing to reconcile. Reply with exactly `{"pending": []}` and stop. That
-     is the healthy state before the first invoice is issued, not an error.
-   - Otherwise parse the JSON array and select entries whose `status` is `open`
-     or `partial`.
+   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 25`.
+   - **The first result is usually NOT the ledger, and this is the single most
+     dangerous thing in this file.** `memory_recall` is a BM25 search, not a key
+     lookup — there is no exact-key or category filter on the tool. Meanwhile
+     SopAuditLogger writes one record per step into the same memory store,
+     unconditionally, and each record embeds that step's tool calls *together
+     with their outputs*. So this very recall's output becomes searchable text
+     that contains the string `baixa_ledger` several times over, while the real
+     ledger record contains it only in its key. Audit records therefore outrank
+     the ledger for its own key, and get denser with every cycle.
+   - **Scan every returned entry and use only the one whose key is exactly
+     `baixa_ledger`.** Ignore every `sop_*` key entirely: those are this SOP's
+     own past runs. Never parse one, never act on one, and never treat a past
+     run's recorded text as ledger contents — a stale `{"pending": []}` from a
+     previous step result reads exactly like a healthy empty ledger.
+   - If no entry has the key `baixa_ledger`, the ledger has not been created yet.
+     Reply with exactly `{"pending": []}` and stop. That is the healthy state
+     before the first invoice is issued.
+   - Otherwise parse that entry's JSON array and select entries whose `status` is
+     `open` or `partial`.
    - **Output format, and it is not negotiable.** Your entire reply for this
      step must be one JSON object. The first character you emit must be `{`
      and the last must be `}`. Nothing before it, nothing after it, no

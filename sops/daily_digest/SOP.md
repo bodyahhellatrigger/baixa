@@ -19,11 +19,15 @@ USDC_MINT        = <USDC_MINT_ADDRESS>
 
 1. **Read the ledger** — One recall, no chain access.
    - tools: memory_recall
-   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 1`.
-   - `memory_recall` is a search, not a key lookup. When no `baixa_ledger`
-     record exists it returns the closest matches instead, which on a quiet
-     deployment are this SOP's own audit entries. Treat any result whose key is
-     not exactly `baixa_ledger` as no ledger at all.
+   - Call `memory_recall` with `query: "baixa_ledger"`, `limit: 25`.
+   - **The first result is usually not the ledger.** `memory_recall` is a BM25
+     search with no exact-key filter, and SopAuditLogger writes every step —
+     including its tool calls and their outputs — into the same store. A past
+     recall's own output is text containing `baixa_ledger`, so audit records
+     outrank the ledger for its own key and get denser each cycle.
+   - Scan all returned entries and use only the one whose key is exactly
+     `baixa_ledger`. Ignore every `sop_*` key: those are past runs of these
+     SOPs, not data.
    - An empty or missing ledger means nothing to report: reply with exactly
      `{"invoices": []}` and finish. Step 3 will send `📋 Baixa — ledger empty`.
    - Otherwise parse the JSON array.

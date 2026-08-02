@@ -33,7 +33,6 @@ enabled = true                          # schema.rs:3543-3544
 channels = ["telegram.home"]            # schema.rs:3545-3550
 model_provider = "anthropic.default"    # schema.rs:3551-3556
 risk_profile = "baixa"                  # schema.rs:3557-3560
-skill_bundles = ["baixa"]
 cron_jobs = ["reconcile", "daily_digest"]   # schema.rs:3598-3603               # schema.rs:3565-3570
 
 # Per-agent memory. Backend locks at agent creation (schema.rs:3703-3710).
@@ -187,14 +186,24 @@ agents = ["baixa"]
 external_peers = ["<OPERATOR_TELEGRAM_NUMERIC_ID>"]
 
 # ─────────────────────────────────────────────────────────────────
-# Skill bundle  (schema.rs:471-474 — SkillBundleConfig at schema.rs:12009)
+# Skills live in the WORKSPACE skill directory, not a bundle.
 #
-# With `directory` omitted this resolves to <install>/shared/skills/baixa/
-# (docs tools/skills.md:11). Copy skills/create_invoice/ there.
+# <workspace>/skills/ is what the Telegram command menu is built from:
+# register_bot_commands calls load_skills(workspace_dir) and turns each skill's
+# `name` + `description` into a `/command` via setMyCommands
+# (channels/telegram.rs:988-1069, :1010). Bundle skills reach the agent's system
+# prompt but never appear in that menu, so a bundle-only install gives the
+# operator a bot with 13 built-in commands and no product surface.
+#
+# Both sources load into the prompt, and workspace wins a name collision
+# (skills/mod.rs:655-660). Keeping the same skill in both is therefore silent
+# duplication with a drift hazard — the exact failure mode that cost a session
+# when a bundle `include` entry and a `name:` frontmatter field disagreed by one
+# character. One home only.
+#
+# The security property that mattered here was never the bundle `include` list;
+# it is [risk_profiles.baixa] allowed_tools, which is unchanged.
 # ─────────────────────────────────────────────────────────────────
-
-[skill_bundles.baixa]
-include = ["create_invoice"]            # schema.rs:12012-12013
 
 [skills]
 allow_scripts = false                   # schema.rs:6074-6077 — keep off
