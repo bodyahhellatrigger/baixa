@@ -1,0 +1,29 @@
+# Manifest for the daily_digest SOP. See sops/reconcile/SOP.toml for why this
+# is TOML plus a sibling SOP.md rather than a single YAML file.
+#
+# Fires 08:00 UTC = 09:00 local for an operator at UTC+1.
+#
+# The SOP cron trigger variant carries NO `tz` field
+# (crates/zeroclaw-runtime/src/sop/types.rs:161-164), unlike declarative
+# [cron.<alias>] jobs which do (schema.rs:12776-12780). Window evaluation runs
+# against chrono::Utc::now() (dispatch.rs:1317), so this expression is UTC and
+# the offset has to be baked into the hour by hand.
+#
+# Operators outside UTC+1: subtract your offset from the wall-clock hour you
+# want. This also means the digest does not follow daylight saving — at UTC+2
+# in summer it arrives at 10:00 local until you edit the hour.
+#
+# The expression is 5-field and gets normalized to 6-field at parse time
+# (crates/zeroclaw-runtime/src/sop/dispatch.rs:1252-1253).
+
+[sop]
+name = "daily_digest"
+description = "Sends the operator one daily summary of the Baixa ledger: paid today, still open with age, flagged items with reasons, and the running total received."
+version = "0.1.0"
+agent = "baixa"
+max_concurrent = 1
+admission_policy = "hold"
+
+[[triggers]]
+type = "cron"
+expression = "0 8 * * *"
