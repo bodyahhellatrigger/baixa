@@ -52,7 +52,7 @@ explains it. Every one was found by running it, not reading about it. Each passe
 `zeroclaw doctor`, `sop validate` and `skills list` while broken, and several
 produced no error at any log level.
 
-Three that cost the most:
+Four that cost the most:
 
 - **A SOP cron trigger fires and nothing executes it.** The daemon hands the
   dispatch result to a function that only logs. Only `deterministic` runs are
