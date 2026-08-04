@@ -470,6 +470,39 @@ which is **720 runs a day**. Each run is at least one model turn even when
 nothing is open, because step 1 has to read the ledger before it can conclude
 `nothing open`.
 
+### A free provider will not run this agent, and the reason is arithmetic
+
+Groq is the obvious candidate: free tier, no card, OpenAI-compatible, supported
+by ZeroClaw at `[providers.models.groq.<alias>]`. Reproducibility is 15% of this
+bounty's score, and a judge who can run the project without paying anyone is
+worth more than one who cannot. It was tried properly. It does not work, for
+three independent reasons found in this order.
+
+**`openai/gpt-oss-120b` breaks the tool protocol.** Groq returns
+`400 tool_choice is none, but model called a tool`, and the attempted call names
+`tool.sop_status` rather than `sop_status`.
+
+**`llama-3.3-70b-versatile` emits the wrong syntax.** It writes llama's *text*
+function format into a native tool-calling request —
+`<function=sop_execute={...}</function>` — which Groq rejects as
+`tool_use_failed`. Setting `native_tools = false`, which is ZeroClaw's default
+for Groq precisely because of this family's history, does not help.
+
+**The free tier caps at 12,000 tokens per minute.** This agent's system prompt is
+roughly **13,000 tokens per call**: every skill body inlined at
+`prompt_injection_mode = "full"`, measured at 3.0M input tokens across 233 calls
+in `state/costs.jsonl`. A single turn does not fit inside the per-minute quota.
+The 429 is not a burst problem to back off from; the request is larger than the
+budget it is drawn against.
+
+That third point generalises past Groq. **Any free tier with a per-minute token
+cap below ~15k cannot run a Tier 1 ZeroClaw agent that inlines its skills.** The
+lever is `prompt_injection_mode = "compact"`, which keeps skill bodies out of the
+prompt and loads them through `read_skill` on demand. It would fit — at the cost
+of one mandatory extra tool call per turn, on models that had just demonstrated
+they mangle ordinary ones. Not a trade worth making here; possibly the right one
+for a smaller agent.
+
 ### The cost ceiling only covers models named in `[cost.rates.*]`
 
 `enforcement.mode = "block"` refuses a request once `daily_limit_usd` is

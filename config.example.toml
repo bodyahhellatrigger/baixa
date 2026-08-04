@@ -15,6 +15,37 @@ schema_version = 3                       # migration.rs:9 — CURRENT_SCHEMA_VER
 # Model provider  (schema.rs:135-137 — [providers.models.<type>.<alias>])
 # ─────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────
+# Groq: tried, measured, rejected. Kept here as a record.
+#
+# Free tier, no card, OpenAI-compatible — attractive for reproducibility, since
+# a judge could stand this up without paying anyone. It does not work for this
+# agent, for three independent reasons found in this order:
+#
+#   1. openai/gpt-oss-120b returns 400 `tool_choice is none, but model called a
+#      tool`, and names the tool `tool.sop_status` rather than `sop_status`.
+#   2. llama-3.3-70b-versatile emits llama's TEXT function syntax into a native
+#      tool-calling request — `<function=sop_execute={...}</function>` — which
+#      Groq rejects as `tool_use_failed`. Setting native_tools = false (the
+#      ZeroClaw default for Groq) does not help.
+#   3. The one that ends the discussion: the free tier caps at 12,000 tokens per
+#      minute. This agent's system prompt is roughly 13,000 tokens per call —
+#      every skill body inlined at prompt_injection_mode = "full", measured at
+#      3.0M input tokens across 233 calls. A single turn does not fit inside the
+#      per-minute quota. That is arithmetic, not tuning.
+#
+# `prompt_injection_mode = "compact"` would shrink the prompt enough to fit, at
+# the cost of the agent having to fetch each skill body through `read_skill`.
+# Given that both models above mangled ordinary tool calls, adding a mandatory
+# one to every turn is not a trade worth making.
+#
+# Uncomment and set model_provider = "groq.default" to reproduce the failures.
+# [providers.models.groq.default]
+# model = "llama-3.3-70b-versatile"
+# api_key = "<GROQ_API_KEY>"
+# native_tools = true
+# ─────────────────────────────────────────────────────────────────
+
 [providers.models.anthropic.default]
 # Cost matters here: reconcile fires 720×/day, so the model choice dominates
 # the running bill. See SETUP.md §11 for the estimate and the alternatives.
@@ -481,3 +512,4 @@ cached_input_per_mtok = 0.5
 input_per_mtok = 3.0
 output_per_mtok = 15.0
 cached_input_per_mtok = 0.3
+
