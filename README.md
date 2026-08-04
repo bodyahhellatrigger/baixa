@@ -52,17 +52,22 @@ Honesty here is deliberate. A reader should be able to tell demonstration from c
 - The step 6 routing guard: with `destination_mismatch` false, the run ends at 6/7 and the human checkpoint is never dispatched.
 - Injection vectors A and B, with live transcripts in [INJECTION_TEST.md](INJECTION_TEST.md).
 
-**Not yet proven:**
+**Not proven, and not claimed anywhere in this repository:**
 
-- No real payment has been reconciled. Steps 2 through 7 have run against an empty result set, never against a matching transaction.
-- Injection vectors C, D, and D2 are not complete.
+- **No real payment has been reconciled.** Steps 2 through 7 have run against an empty result set, never against a matching transaction. The four-condition check is implemented and read, not demonstrated.
+- Injection vectors C, D and D2 are incomplete. A and B have live transcripts; the rest do not.
 - `daily_digest` has never executed.
+- `/invoices` and `/status` are written and installed but were never invoked.
+
+The reason is mundane and worth stating rather than hiding: the provider balance ran out mid-session, and topping it up further was not worth it for this submission. A free provider was tried and cannot run this agent — that attempt became finding 13.
+
+Everything above the line was measured from the runtime trace and the ledger, not read off a chat reply. Everything below it is absent. There is no third category.
 
 ---
 
 ## What this project is actually worth reading for
 
-The agent works. So will most submissions. The part that took the time is documented in [SUBMISSION.md](SUBMISSION.md) under *Things that cost time*: twelve defects in the platform and in this repository's own configuration, each with a source citation.
+The agent works. So will most submissions. The part that took the time is documented in [SUBMISSION.md](SUBMISSION.md) under *Things that cost time*: thirteen defects in the platform and in this repository's own configuration, each with a source citation.
 
 Every one of them was found by **running the thing**. Each passed `zeroclaw doctor`, `sop validate`, and `skills list` while broken, and several produced no error at any log level.
 
@@ -72,9 +77,10 @@ A sample:
 - **A skill can be installed, listed, and never reach the agent.** The bundle `include` list matches the skill's `name:` frontmatter, not its directory. A hyphen against an underscore filtered `create_invoice` out of every turn, silently. `zeroclaw skills list` does not apply that filter, so it reported the skill as installed the whole time.
 - **A classifier decides whether your message deserves a reply.** An explicit invoice request was classified as not needing one. The agent loop never ran. Nothing downstream had a chance to fail loudly.
 - **The cost ceiling only covers models named in the rate sheet.** A model absent from `[cost.rates.*]` is priced at $0.00, so `enforcement.mode = "block"` never fires. Measured: a $3.00 daily cap read $1.04 while the real bill was $11.44.
+- **No free provider can run this agent, and the reason is arithmetic.** Groq's free tier caps at 12,000 tokens per minute. This agent's system prompt is ~13,000 tokens per call, every skill body inlined. One turn does not fit in the per-minute quota.
 - **The ledger disappears from its own store.** The SOP audit logger writes each step, including its tool calls *and their outputs*, into the same memory the ledger lives in. A `memory_recall` for `baixa_ledger` therefore becomes searchable text containing `baixa_ledger`, outranking the real record. Reconciliation then reports success while silently checking nothing.
 
-Three of those twelve are corrections to this repository's own earlier claims. They are written down as corrections rather than quietly fixed, and the commit history shows both the wrong diagnosis and the right one.
+Three of those thirteen are corrections to this repository's own earlier claims. They are written down as corrections rather than quietly fixed, and the commit history shows both the wrong diagnosis and the right one.
 
 ---
 
@@ -82,7 +88,7 @@ Three of those twelve are corrections to this repository's own earlier claims. T
 
 Without installing anything:
 
-1. [SUBMISSION.md](SUBMISSION.md) — the thesis, the failure-path matrix, and the twelve findings with source lines
+1. [SUBMISSION.md](SUBMISSION.md) — the thesis, the failure-path matrix, and the thirteen findings with source lines
 2. [THREAT_MODEL.md](THREAT_MODEL.md) — what is structural, what is behavioural, and what is not claimed
 3. [INJECTION_TEST.md](INJECTION_TEST.md) — five attacks, each with the expected result written before the run and the live transcript after
 4. `git log` — the messages carry the reasoning, including three reversed diagnoses

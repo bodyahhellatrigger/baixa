@@ -464,6 +464,38 @@ Both sources load into the prompt and workspace wins a name collision
 with a drift hazard — the same shape as the `include` mismatch above. Baixa keeps
 skills in the workspace directory and has no bundle.
 
+### No free provider can run this agent, and the reason is arithmetic
+
+Worth knowing before anyone plans a ZeroClaw project around a free tier.
+
+Groq is the obvious candidate: free without a card, OpenAI-compatible, supported
+by ZeroClaw at `[providers.models.groq.<alias>]`. It was tried properly and it
+does not work, for three independent reasons found in this order.
+
+`openai/gpt-oss-120b` breaks the tool protocol: Groq returns
+`400 tool_choice is none, but model called a tool`, and the attempted call is
+named `tool.sop_status` rather than `sop_status`.
+
+`llama-3.3-70b-versatile` emits the wrong syntax entirely — llama's *text*
+function format inside a native tool-calling request,
+`<function=sop_execute={...}</function>`, rejected as `tool_use_failed`. Setting
+`native_tools = false`, which is ZeroClaw's default for Groq precisely because of
+this family's history, does not help.
+
+The third one ends the discussion. **The free tier caps at 12,000 tokens per
+minute; this agent's system prompt is roughly 13,000 tokens per call.** Measured,
+not estimated: 3.0M input tokens across 233 calls in `state/costs.jsonl`, every
+skill body inlined at `prompt_injection_mode = "full"`. A single turn does not fit
+inside the per-minute quota. That is not a burst to back off from — the request is
+larger than the budget it draws against.
+
+The general form, which outlives Groq: **any free tier capped below roughly 15k
+tokens per minute cannot run a Tier 1 ZeroClaw agent that inlines its skills.**
+The lever is `prompt_injection_mode = "compact"`, which keeps skill bodies out of
+the prompt and fetches them through `read_skill` on demand. It would fit. It also
+adds a mandatory tool call to every turn, on models that had just demonstrated
+they mangle ordinary ones.
+
 ### Approval matches on tool name and ignores the HTTP method
 
 `docs/book/src/tools/overview.md:89-93` describes a low/medium/high risk model
