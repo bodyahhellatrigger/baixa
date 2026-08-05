@@ -1,5 +1,5 @@
 **Baixa — a USDC invoice agent that holds no keys**
-ZeroClaw + Solana. Tier 1: stock binary, zero plugins, zero WASM.
+ZeroClaw + Solana. Tier 1: stock binary, no plugins, no WASM.
 
 Type `invoice Acme 250 USDC for August` in Telegram. It issues a Solana Pay link and QR, polls the chain every two minutes, and closes the invoice when the payment verifies.
 
