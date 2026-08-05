@@ -7,7 +7,7 @@ Type `invoice Acme 250 USDC for August` in Telegram. It issues a Solana Pay link
 
 Status is written in one place, after four conditions hold: no on-chain error, the mint matches, the destination **owner** matches (from `postTokenBalances`, not the token account), and the amount covers the invoice. No chat message can set a status: nothing has a tool that writes one. Four states, not two. A destination mismatch parks on a checkpoint.
 
-**What is and isn't demonstrated.** Invoice issue is real, verified from the runtime trace: the recipient in the emitted URL matches the config constant character for character. Reconcile runs seven steps against a live invoice and leaves the status untouched. **No real payment has been reconciled.** Two of five injection vectors have live transcripts; the rest are predictions.
+**What is and isn't demonstrated.** Invoice issue is real, verified from the runtime trace: the recipient in the emitted URL matches the config constant exactly. Reconcile runs seven steps against a live invoice and leaves the status untouched. **No real payment has been reconciled.** Two of five injection vectors have live transcripts; the rest are predictions.
 
 **The part I'd like reviewed.** Thirteen defects documented, each with its source line. All found by running it, and each passed `doctor`, `sop validate` and `skills list` while broken.
 
